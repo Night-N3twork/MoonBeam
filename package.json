@@ -1,0 +1,40 @@
+{
+  "name": "@nightnetwork/moonbeam",
+  "version": "0.2.0",
+  "description": "Browser network stack — Wisp v2.1 client, virtual LAN gateway, TCP/UDP NAT — extracted from Eclipse.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-extensions.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tcpip": "^0.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "~5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}
