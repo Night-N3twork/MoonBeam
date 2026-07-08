@@ -75,6 +75,29 @@ export class MoonbeamRelay {
     this.clients.delete(port);
   }
 
+  // ------------------------------------------------------------------
+  // Observability
+  // ------------------------------------------------------------------
+
+  /** Number of clients currently attached to this relay. */
+  clientCount(): number {
+    return this.clients.size;
+  }
+
+  /** Total number of open upstream streams across all attached clients. */
+  streamCount(): number {
+    let n = 0;
+    for (const s of this.clients.values()) {
+      n += s.upstreamStreams.size;
+    }
+    return n;
+  }
+
+  /** Whether the relay is closed. */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

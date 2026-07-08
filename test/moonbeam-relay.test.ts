@@ -175,3 +175,45 @@ describe('MoonbeamRelay.detach', () => {
     await relay.close();
   });
 });
+
+describe('MoonbeamRelay observability', () => {
+  it('clientCount reflects attached clients', async () => {
+    const { relay } = await createRelayWithHandshake();
+    expect(relay.clientCount()).toBe(0);
+    const p1 = relay.attach();
+    expect(relay.clientCount()).toBe(1);
+    const p2 = relay.attach();
+    expect(relay.clientCount()).toBe(2);
+    relay.detach(p1);
+    expect(relay.clientCount()).toBe(1);
+    relay.detach(p2);
+    expect(relay.clientCount()).toBe(0);
+    await relay.close();
+  });
+
+  it('streamCount tracks open upstream streams', async () => {
+    const { relay, server } = await createRelayWithHandshake();
+    const port = relay.attach();
+    expect(relay.streamCount()).toBe(0);
+
+    port.postMessage(encodePacket(PACKET_TYPE.CONNECT, 1, encodeConnect('tcp', 80, 'a.example')));
+    port.postMessage(encodePacket(PACKET_TYPE.CONNECT, 2, encodeConnect('tcp', 80, 'b.example')));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(relay.streamCount()).toBe(2);
+
+    // Server closes stream ID 1 (upstream ID).
+    server.sendClose(1, /* CloseReason.Voluntary */ 0x02);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(relay.streamCount()).toBe(1);
+
+    await relay.close();
+  });
+
+  it('isClosed flips after close()', async () => {
+    const { relay } = await createRelayWithHandshake();
+    expect(relay.isClosed()).toBe(false);
+    await relay.close();
+    expect(relay.isClosed()).toBe(true);
+  });
+});

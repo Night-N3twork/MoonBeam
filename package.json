@@ -1,6 +1,6 @@
 {
   "name": "@nightnetwork/moonbeam",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Browser network stack — Wisp v2.1 client, virtual LAN gateway, TCP/UDP NAT — extracted from Eclipse.",
   "license": "Apache-2.0",
   "type": "module",
