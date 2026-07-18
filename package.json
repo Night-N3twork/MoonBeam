@@ -1,16 +1,16 @@
 {
   "name": "@nightnetwork/moonbeam",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Browser network stack. Wisp relay, virtual LAN, TCP/UDP NAT.",
   "license": "Apache-2.0",
   "author": "Night Network",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nightnetwork/moonbeam.git"
+    "url": "https://github.com/Night-N3twork/Moonbeam.git"
   },
-  "homepage": "https://github.com/nightnetwork/moonbeam#readme",
+  "homepage": "https://github.com/Night-N3twork/Moonbeam#readme",
   "bugs": {
-    "url": "https://github.com/nightnetwork/moonbeam/issues"
+    "url": "https://github.com/Night-N3twork/Moonbeam/issues"
   },
   "type": "module",
   "main": "./dist/index.js",
