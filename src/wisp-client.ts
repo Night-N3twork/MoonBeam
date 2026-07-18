@@ -105,7 +105,7 @@ export interface WispStream {
   close(reason?: number): void;
   /** Resolves when the stream is closed (locally or by the server). */
   closed: Promise<{ reason: number }>;
-  on(event: 'open' | 'data' | 'close' | 'error', listener: (...args: any[]) => void): void;
+  on(event: 'open' | 'data' | 'close' | 'error' | 'credit', listener: (...args: any[]) => void): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +256,13 @@ class WispStreamImpl extends TinyEmitter implements WispStream {
       this.parent._sendDataPacket(this.id, chunk);
       this.creditsRemaining--;
     }
+    this._emitCredit();
+  }
+
+  /** Internal: advertise current absolute TCP send capacity. */
+  _emitCredit(): void {
+    if (this.type !== 'tcp' || this.isClosed) return;
+    this.emit('credit', this.creditsRemaining);
   }
 
   /** Internal: server (or fatal-close path) closed this stream. */
@@ -451,6 +458,8 @@ export class WispClient extends TinyEmitter {
     // care.
     if (type === 'tcp') {
       stream.creditsRemaining = this.handshakeBufferSize;
+      // Consumers attach listeners immediately after createStream returns.
+      queueMicrotask(() => stream._emitCredit());
     }
     this.streams.set(id, stream);
 

@@ -453,6 +453,27 @@ describe('backpressure', () => {
     expect(Array.from(data[2])).toEqual([0x03]);
   });
 
+  test('emits initial and post-drain TCP credit as absolute remaining capacity', async () => {
+    const pair = makePair();
+    await doHandshake(pair, { udp: true }, 2);
+    const stream = pair.client.createStream('example.com', 80, 'tcp');
+    const credits: number[] = [];
+    stream.on('credit', (remaining: number) => credits.push(remaining));
+    await Promise.resolve();
+
+    expect(credits).toEqual([2]);
+    stream.send(new Uint8Array([1]));
+    stream.send(new Uint8Array([2]));
+    stream.send(new Uint8Array([3]));
+    stream.send(new Uint8Array([4]));
+    expect(pair.srv.dataPackets(stream.id)).toHaveLength(2);
+
+    pair.srv.sendStreamContinue(stream.id, 3);
+
+    expect(pair.srv.dataPackets(stream.id)).toHaveLength(4);
+    expect(credits).toEqual([2, 1]);
+  });
+
   test('UDP streams skip credit accounting entirely', async () => {
     const pair = makePair();
     await doHandshake(pair, { udp: true }, 1);
@@ -462,6 +483,19 @@ describe('backpressure', () => {
       stream.send(new Uint8Array([i]));
     }
     expect(pair.srv.dataPackets(stream.id).length).toBe(5);
+  });
+
+  test('UDP streams never emit credit events', async () => {
+    const pair = makePair();
+    await doHandshake(pair, { udp: true }, 2);
+    const stream = pair.client.createStream('1.1.1.1', 53, 'udp');
+    const credits: number[] = [];
+    stream.on('credit', (remaining: number) => credits.push(remaining));
+
+    await Promise.resolve();
+    stream.send(new Uint8Array([1]));
+
+    expect(credits).toEqual([]);
   });
 });
 
