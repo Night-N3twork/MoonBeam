@@ -31,6 +31,41 @@ export const EXTENSION_ID = {
   MOTD: 0x04,
   STREAM_OPEN_CONFIRMATION: 0x05,
 } as const;
+export type ExtensionId = (typeof EXTENSION_ID)[keyof typeof EXTENSION_ID];
+
+/**
+ * Metadata shapes for each known Wisp extension.
+ *
+ * - `UdpExtension`: empty metadata (presence alone signals support).
+ * - `PasswordAuthExtension`: `{ username: string; password: string }` encoded
+ *   as `username:u8[]|0x00|password:u8[]` (username and password are
+ *   null-terminated UTF-8 byte sequences).
+ * - `PubkeyAuthExtension`: `{ publicKey: Uint8Array; signature: Uint8Array }`
+ *   — two length-prefixed byte sequences.
+ * - `MotdExtension`: `{ message: string }` — a UTF-8 message from the server.
+ * - `StreamOpenConfirmationExtension`: empty metadata (presence alone signals
+ *   support; the server sends a CONTINUE on the stream before the first DATA
+ *   to confirm the upstream connection succeeded).
+ */
+export type ExtensionMetadataByID = {
+  [EXTENSION_ID.UDP]: undefined;
+  [EXTENSION_ID.PASSWORD_AUTH]: { username: string; password: string };
+  [EXTENSION_ID.PUBKEY_AUTH]: { publicKey: Uint8Array; signature: Uint8Array };
+  [EXTENSION_ID.MOTD]: { message: string };
+  [EXTENSION_ID.STREAM_OPEN_CONFIRMATION]: undefined;
+};
+
+export type ExtensionID = keyof ExtensionMetadataByID;
+
+/**
+ * Resolved extension descriptor after parsing the raw metadata bytes.
+ * `metadata` is `undefined` for extensions that carry no metadata (presence
+ * alone signals support).
+ */
+export type ResolvedExtension<T extends ExtensionID = ExtensionID> = {
+  id: T;
+  metadata: ExtensionMetadataByID[T];
+};
 
 export const CLOSE_REASON = {
   // Common

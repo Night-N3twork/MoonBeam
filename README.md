@@ -317,6 +317,296 @@ The **MoonbeamRelay** path is lighter-weight: WASM clients speak Wisp directly o
 
 ---
 
+## MoonScale Integration
+
+[MoonScale](https://github.com/Night-N3twork/MoonScale) is a Tailscale Connect client for browser runtimes. When combined with Moonbeam, you get both Tailscale mesh connectivity and Wisp-based virtual LAN networking in the same page.
+
+### How they connect
+
+MoonScale and Moonbeam are independent — they don't share a direct API binding. They coexist in the same page, each handling different traffic:
+
+- **MoonScale** provides Tailscale mesh connectivity: `dialTcp`, `dialUdp`, `listenTcp`, `listenUdp` over your tailnet. It runs Tailscale Connect's Go/WASM bridge in a Web Worker.
+- **Moonbeam** provides Wisp relay and virtual LAN networking: `MoonbeamRelay` for WASM clients, `Gateway` for QEMU-wasm VMs.
+
+### Setup
+
+```bash
+npm install @nightnetwork/moonscale @nightnetwork/moonbeam
+```
+
+### Using MoonScale alongside Moonbeam
+
+```ts
+import { MoonScaleClient } from '@nightnetwork/moonscale';
+import { MoonbeamRelay } from '@nightnetwork/moonbeam';
+
+// Moonbeam relay for WASM clients / virtual LAN
+const relay = await MoonbeamRelay.create({
+  wispUrl: 'wss://your-wisp-server/',
+});
+
+// MoonScale for Tailscale mesh connectivity
+const moonscale = await MoonScaleClient.create({
+  onAuthURL: (url) => console.log(`Open: ${url}`),
+  onState: (state) => console.log('Tailscale state:', state),
+  onNetMap: (netmap) => console.log('Tailscale addresses:', netmap.self.addresses),
+});
+
+moonscale.login();
+
+// MoonScale dials over the tailnet
+const socket = await moonscale.dialTcp('100.64.0.10', 443);
+socket.send(new TextEncoder().encode('GET / HTTP/1.1\r\nHost: example.com\r\n\r\n'));
+
+// Moonbeam relay handles Wisp clients
+const port = relay.attach({ label: 'nova-worker' });
+```
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│  Browser page                                │
+│                                              │
+│  ┌─────────────────┐   ┌──────────────────┐ │
+│  │  MoonScale       │   │  MoonbeamRelay   │ │
+│  │  (Tailscale)     │   │  (Wisp relay)    │ │
+│  │  ┌─────────────┐ │   │  ┌────────────┐  │ │
+│  │  │ Web Worker  │ │   │  │ WispClient │  │ │
+│  │  │ Go/WASM     │ │   │  └─────┬──────┘  │ │
+│  │  │ Tailscale   │ │   │        │         │ │
+│  │  │ Connect      │ │   │  ┌─────▼──────┐  │ │
+│  │  └──────┬──────┘ │   │  │ WispServer │  │ │
+│  │         │        │   │  │ (remote)   │  │ │
+│  │  ┌──────▼──────┐ │   │  └────────────┘  │ │
+│  │  │ Tailscale   │ │   └──────────────────┘ │
+│  │  │ tailnet     │ │                        │
+│  │  └─────────────┘ │                        │
+│  └──────────────────┘                        │
+└──────────────────────────────────────────────┘
+```
+
+MoonScale and Moonbeam are independent — they don't share a direct API binding. They coexist in the same page, each handling different traffic:
+
+- **MoonScale** dials over your Tailscale tailnet (mesh VPN). Use it to reach devices on your tailnet by their `100.x.x.x` addresses.
+- **Moonbeam** provides Wisp relay and virtual LAN networking for WASM clients and QEMU-wasm VMs.
+
+The demo at `night-network-demo` shows both running side-by-side.
+
+### Tailscale under Wisp
+
+The demo supports two routing modes for testing exit node traffic:
+
+#### 1. Wisp tunnel mode (default)
+
+The MoonBeam relay uses a native browser WebSocket to the Wisp server.
+The bridge (`listenTcp`) forwards connections through the Wisp tunnel as
+Wisp frames. Nova's HTTP requests can optionally use MoonScale's
+`fetch()` for exit node routing while the bridge stays on Wisp.
+
+```
+Nova fetch ──→ MoonScale dialer ──→ exit node ──→ internet
+Bridge      ──→ Wisp tunnel (native WebSocket) ──→ Wisp server ──→ target
+```
+
+Controlled by the **"Route through Tailscale exit node"** checkbox in the
+MoonBeam pane. When checked, `MoonbeamRelay` creates its upstream connection
+with `_injectWebSocket: new WebSocket(wispUrl)` (native browser WebSocket,
+not through Tailscale), and Nova switches to `client.fetch()` through the
+Tailscale dialer.
+
+#### 2. Raw exit node mode (bypass Wisp)
+
+Completely bypasses Wisp. The bridge uses `client.dialTcp()` directly
+through the Tailscale dialer instead of encoding Wisp frames. Nova uses
+`client.fetch()`. No WebSocket to the Wisp server is involved.
+
+```
+Nova fetch ──→ MoonScale dialer ──→ exit node ──→ internet
+Bridge      ──→ MoonScale dialer ──→ Tailscale peer ──→ Dusk
+```
+
+Controlled by the **"Bypass Wisp — use raw exit node"** checkbox. When
+checked, the bridge stops creating Wisp streams and instead opens raw
+TCP connections through `MoonScaleClient.dialTcp()`, piping data
+bidirectionally between the incoming `listenTcp` socket and the outgoing
+`dialTcp` socket. This mode is useful for comparing Wisp overhead
+against direct Tailscale routing.
+
+### Tailscale → MoonBeam Bridge
+
+The demo includes a **TailscaleDuskBridge** that connects Tailscale traffic to in-browser services via MoonBeam. The bridge:
+
+1. Listens on a Tailscale IP:port via `MoonScaleClient.listenTcp('0.0.0.0', port)`
+2. Forwards each connection through the MoonBeam relay by sending Wisp CONNECT frames over an attached `MessagePort`
+3. Discovers the target host:port from `relay.listenersSnapshot()` — no hardcoded addresses
+
+```
+Tailscale peer ──→ netstack ──→ listenTcp     bridge     MoonBeam relay     Dusk listener
+                    (decrypt)    (0.0.0.0:8080) ──→ CONNECT ──→ match ──→ handler
+                                                    dusk.local:8080         HTTP server
+```
+
+The bridge attaches a client to the relay:
+```ts
+const port = relay.attach({ label: 'tailscale-bridge' });
+port.postMessage(encodePacket(PACKET_TYPE.CONNECT, streamId,
+  encodeConnect('tcp', 8080, 'dusk.local')));
+```
+
+Incoming data from the Tailscale socket is forwarded as Wisp DATA frames; socket close/error events become Wisp CLOSE frames.
+
+### Funnel Access
+
+The bridge also supports Tailscale Funnel for internet-facing access:
+
+```ts
+// Port 443: Tailscale Funnel (internet, TLS terminated at edge)
+await client.setFunnel(443, '127.0.0.1:8080');
+
+// Port 80: netstack listener (tailnet-only, no TLS)
+await client.setFunnel(80, '127.0.0.1:8080');
+```
+
+Funnel ports (443/8443) use Tailscale's serve config with `AllowFunnel`. Non-Funnel ports register a netstack listener directly and pipe connections via `UserDial` to avoid the serve proxy's `SystemDial` (which cannot reach netstack listeners in WASM).
+
+### _injectWebSocket option
+
+`MoonbeamRelay.create()` accepts an `_injectWebSocket` option to provide
+a pre-created WebSocket instance instead of letting the relay create one.
+This is used to supply a native browser WebSocket when Tailscale routing
+is active:
+
+```ts
+const relay = await MoonbeamRelay.create({
+  wispUrl: 'wss://gointospace.app/wisp/',
+  _injectWebSocket: new WebSocket('wss://gointospace.app/wisp/'),
+});
+```
+
+Without `_injectWebSocket`, the relay creates its own WebSocket through
+the default runtime path. In the demo, this means the relay's WebSocket
+would also be created through the worker bridge (and thus through the
+Tailscale netstack if enabled). The native WebSocket keeps the Wisp
+transport layer independent of Tailscale.
+
+---
+
+## Port Forwarding
+
+Moonbeam supports two port forwarding patterns: **local TCP listeners** on the relay and **host-side service bindings** on the Gateway.
+
+### Local TCP listeners (MoonbeamRelay)
+
+`registerListener` intercepts CONNECT requests from attached clients matching a host:port and routes them to an in-process handler instead of upstream:
+
+```ts
+import { MoonbeamRelay } from '@nightnetwork/moonbeam';
+
+const relay = await MoonbeamRelay.create({
+  wispUrl: 'wss://your-wisp-server/',
+});
+
+// Forward localhost:8080 to an in-process HTTP server
+relay.registerListener('localhost', 8080, (socket) => {
+  socket.onData((data) => {
+    const request = new TextDecoder().decode(data);
+    const response = 'HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello World!';
+    socket.send(new TextEncoder().encode(response));
+    socket.close();
+  });
+});
+
+// Forward all traffic to 10.0.0.1:53 to a local DNS resolver
+relay.registerListener('10.0.0.1', 53, (socket) => {
+  socket.onData((data) => {
+    const response = localDnsResolve(data);
+    socket.send(response);
+    socket.close();
+  });
+});
+```
+
+The `registerListener` method returns an unregister function. When a client sends a CONNECT matching a registered `host:port`, the handler receives a `MoonbeamLocalSocket` instead of the request going upstream. This enables in-process service interception, local DNS, HTTP servers, and protocol bridges without leaving the browser.
+
+### Gateway port forwarding
+
+For QEMU-wasm VMs, the `Gateway` provides host-side service bindings that let browser code reach into the VM's virtual LAN:
+
+```ts
+import { Gateway } from '@nightnetwork/moonbeam';
+
+const gateway = new Gateway({
+  wispUrl: 'wss://your-wisp-server/',
+  egress: { allow: ['public'] },
+});
+await gateway.init();
+
+// Connect to a TCP service inside the VM
+const socket = await gateway.connectTcp('192.168.127.2', 8080);
+const writer = socket.writable.getWriter();
+await writer.write(new TextEncoder().encode('GET / HTTP/1.1\r\nHost: vm\r\n\r\n'));
+
+// Listen for inbound TCP from the VM
+const listener = await gateway.listenTcp(9090);
+// VM can now connect to 192.168.127.1:9090
+
+// Open a UDP socket on the gateway
+const udpSocket = await gateway.openUdp(5353);
+```
+
+---
+
+## Wisp Extension System
+
+Moonbeam implements the Wisp v2.1 extension negotiation framework. Extensions are advertised during the INFO handshake and enable optional protocol features.
+
+### Known extensions
+
+| ID | Name | Metadata | Description |
+|----|------|----------|-------------|
+| `0x01` | UDP | *(empty)* | Signals UDP stream support. Presence alone indicates the peer accepts UDP streams. |
+| `0x02` | Password Auth | `username:u8[]|0x00|password:u8[]` | Username/password authentication. Username and password are null-terminated UTF-8 byte sequences. |
+| `0x03` | Pubkey Auth | `publicKey:u8[]|signature:u8[]` | Public-key authentication with two length-prefixed byte sequences. |
+| `0x04` | MOTD | `message: string` | Server sends a message-of-the-day during handshake. |
+| `0x05` | Stream Open Confirmation | *(empty)* | Server sends a CONTINUE on each new stream before the first DATA, confirming the upstream connection succeeded. Gives the client ECONNREFUSED semantics. |
+
+### Extension negotiation flow
+
+1. Client sends an INFO packet with its supported extension IDs.
+2. Server responds with its own INFO packet, listing the extensions it supports (subset of the client's).
+3. Each side inspects the other's extensions and enables corresponding features.
+4. Unknown extension IDs are silently ignored (forward-compat).
+
+### Using extensions in WispClient
+
+```ts
+import { WispClient, EXTENSION_ID } from '@nightnetwork/moonbeam';
+
+const client = new WispClient({
+  url: 'wss://your-wisp-server/',
+  allowV1: false, // v2-only for extension negotiation
+});
+
+await client.ready();
+
+// Inspect negotiated extensions
+const info = client.getServerInfo();
+for (const ext of info.extensions) {
+  switch (ext.id) {
+    case EXTENSION_ID.MOTD: {
+      const msg = new TextDecoder().decode(ext.metadata);
+      console.log('Server MOTD:', msg);
+      break;
+    }
+    case EXTENSION_ID.STREAM_OPEN_CONFIRMATION:
+      console.log('Server supports stream open confirmation');
+      break;
+  }
+}
+```
+
+
 ## Testing
 
 ```bash

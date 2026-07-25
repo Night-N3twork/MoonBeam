@@ -4,3 +4,4 @@ coverage/
 .vitest-cache/
 *.log
 .DS_Store
+.worktrees/
