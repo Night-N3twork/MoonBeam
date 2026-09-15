@@ -4,7 +4,7 @@
 
 Complete browser-side networking library providing a Wisp v2.1 client, in-page relay with local TCP listener registration, virtual LAN gateway with DHCP, TCP/UDP NAT, configurable egress policy, and QEMU-wasm integration.
 
-**Version 1.0.0** · Apache-2.0
+**Version 1.1.1** · Apache-2.0
 
 ---
 
@@ -612,13 +612,19 @@ for (const ext of info.extensions) {
 ```bash
 npm test              # 330+ unit tests via Vitest
 npm run test:watch    # watch mode
-npm run typecheck     # tsc --noEmit (see known issue below)
+npm run test:integration       # required in-process Wisp server interoperability
+npm run test:integration:live  # optional compatibility check against quiet.ampscat.dev
+npm run typecheck     # type-check the publishable source program
 npm run build         # emit dist/ (tsc + ESM extension fixer)
 ```
 
 The test suite covers all components: WispClient handshake (v1 and v2), stream multiplexing, credit protocol, MoonbeamRelay attach/detach/listener lifecycle, TCP NAT connection/data/FIN/RST/swap-queue flows, UDP NAT flow tracking/eviction/ICMP, DHCP DISCOVER/REQUEST/NAK/RELEASE, egress policy allow/deny/CIDR/port/loopback, FakeWebSocket state machine, soft-router MAC learning and IP forwarding, and packet codec round-trips.
 
-**Known issue:** `npm run typecheck` currently reports errors due to a `rootDir`/`include` contradiction inherited from the original tsconfig. Runtime, build, and tests are unaffected — Vitest uses esbuild and does not hit this path.
+`npm run test:integration` is hermetic apart from its HTTP target: it starts the
+reference Wisp server in-process and verifies the client handshake and TCP data
+path. `npm run test:integration:live` checks a public Wisp v1 deployment and
+is intentionally separate because endpoint availability and network policy are
+outside this package's control.
 
 ---
 
@@ -649,8 +655,10 @@ The test suite covers all components: WispClient handshake (v1 and v2), stream m
 1. Fork & clone
 2. `npm install`
 3. `npm test` — all tests must pass
-4. `npm run typecheck` — note the known tsconfig issue; focus on new code being type-clean
-5. Open a PR against `main`
+4. `npm run typecheck`
+5. `npm run test:integration` — required local interoperability coverage
+6. `npm run test:integration:live` — optional public-endpoint compatibility check
+7. Open a PR against `main`
 
 ---
 

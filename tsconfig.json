@@ -25,6 +25,6 @@
     "rootDir": "./src",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
