@@ -1,0 +1,3 @@
+[submodule "deps/lwip"]
+	path = deps/lwip
+	url = https://github.com/sandstorm791/lwip-wasm64
