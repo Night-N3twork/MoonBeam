@@ -1,0 +1,9 @@
+[target.'cfg(all(target_family = "wasm", any(target_os = "unknown", target_os = "none")))']
+rustflags = [
+    "-C", "link-arg=--initial-memory=67108864",
+    "-C", "link-arg=--max-memory=67108864",
+    "-C", "link-arg=--global-base=1048576",
+    # JS grows the function table to install per-client shm bridge exports
+    "-C", "link-arg=--growable-table",
+    "--cfg", "getrandom_backend=\"wasm_js\""
+]

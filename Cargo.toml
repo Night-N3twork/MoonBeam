@@ -1,0 +1,20 @@
+[package]
+name = "moonbeam"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hex = "0.4.3"
+wasm-bindgen = "0.2.126"
+web-sys = { version = "0.3.103", features = ["MessagePort", "MessageEvent", "Performance", "console"] }
+wisp-mux = { git = "https://github.com/sandstorm791/epoxy-tls", features = ["wasm", "tokio-websockets"] }
+
+[build-dependencies]
+cc = "1.2.65"
+bindgen = "0.72.1"
+wat = "1"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

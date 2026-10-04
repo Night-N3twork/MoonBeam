@@ -1,0 +1,11 @@
+# Host-side tests for src/shm_shim.wat, run with `cargo test` in this directory.
+# Separate crate because moonbeam itself only builds for wasm32.
+[package]
+name = "shim-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dev-dependencies]
+wasmtime = { version = "49", default-features = false, features = ["cranelift", "runtime", "threads"] }
+wat = "1"

@@ -1,0 +1,52 @@
+//! Shared-memory ring transport, spec v2: rings live in client memory.
+//!
+//! Each client allocates a ring block inside its own shared memory (memory32
+//! or memory64) and hands moonbeam the memory plus the block's byte offset.
+//! Moonbeam never exposes its own memory. All access to the client memory
+//! goes through a small per-client bridge module (`shm_shim.wat`) that
+//! imports both memories (multi-memory) and copies frames between them.
+//! Moonbeam calls the bridge directly through its function table, so frames
+//! never pass through JS.
+//!
+//! Every position is a byte offset relative to the block base. All fields
+//! are little-endian u32, atomics are 4-byte aligned.
+//!
+//! ```text
+//! block (64-byte aligned, written by the client before attaching)
+//!   0  magic        "MBRB"
+//!   4  version      2
+//!   8  block_size   total bytes; both rings must fit inside
+//!  12  slot_count   power of two >= 2
+//!  16  slot_size    multiple of 4, >= max_frame + 4, <= 131072
+//!  20  max_frame    60..=65535
+//!  24  to_client    ring offset (64-aligned): moonbeam -> client
+//!  28  to_host      ring offset (64-aligned): client -> moonbeam
+//!  32  state        see STATE_*
+//!
+//! ring (128-byte header, then slot_count slots)
+//!   0  head         producer index, free-running u32
+//!   4  seq          futex word, bumped by the producer after each publish
+//!   8  waiting      consumer sets 1 before sleeping on seq
+//!  12  dropped      frames the producer dropped because the ring was full
+//!  64  tail         consumer index, free-running u32
+//! 128  slots        slot n at 128 + (n & (slot_count - 1)) * slot_size
+//!
+//! slot: u32 len, then len bytes of frame
+//! ```
+//!
+//! Producer: full if `head - tail == slot_count`; otherwise write the slot,
+//! store `head + 1`, bump `seq`, and if `waiting.swap(0) != 0` notify `seq`.
+//! Consumer: empty if `tail == head`; otherwise copy the slot out and store
+//! `tail + 1`. To sleep: load `seq`, store `waiting = 1`, check the ring
+//! again, and only `Atomics.wait(seq, loaded)` if it is still empty.
+//!
+//! Lifecycle: the client writes the block and sets state READY. The bridge's
+//! `init` validates it and moves it to ATTACHED. The client asks to leave by
+//! setting CLOSING; moonbeam stops using the block and sets RELEASED, after
+//! which the client may reuse the memory. Moonbeam can also release on its own.
+//!
+//! Fairness: each `poll` lets a client consume at most `max_slots_per_client`
+//! slots, counting slots the bridge skipped for a bad length, so a client
+//! that floods its ring with garbage still only gets its share of the thread.
+//!
+//! `js/client.js` is a reference client; `js/moonbeam.js` drives this from JS.
